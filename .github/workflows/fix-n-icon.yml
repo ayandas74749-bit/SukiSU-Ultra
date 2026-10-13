@@ -1,0 +1,51 @@
+name: Fix N Icon
+on: [push, workflow_dispatch]
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          pip install pillow
+          python3 - << 'PY'
+          from PIL import Image, ImageDraw
+          import os, glob
+          src_path=None
+          for p in glob.glob("*.jpg")+["n.png"]:
+            if os.path.exists(p): src_path=p; break
+          if not src_path:
+            for r,_,fs in os.walk("."):
+              for f in fs:
+                if "WA1104" in f: src_path=os.path.join(r,f); break
+          print(f"Using {src_path}")
+          src=Image.open(src_path).convert("RGBA")
+          new=[]
+          for r,g,b,a in src.getdata():
+            if r<60 and g<60 and b<60: new.append((0,0,0,0))
+            else: new.append((r,g,b,a))
+          tmp=Image.new("RGBA", src.size); tmp.putdata(new)
+          if tmp.getbbox(): tmp=tmp.crop(tmp.getbbox())
+          def make(sz):
+            bg=Image.new("RGBA",(sz,sz),(255,255,255,255))
+            nh=int(sz*0.65); w,h=tmp.size; nw=int(nh*w/h)
+            rs=tmp.resize((nw,nh), Image.LANCZOS)
+            bg.paste(rs,((sz-nw)//2,(sz-nh)//2),rs)
+            mask=Image.new("L",(sz,sz),0); ImageDraw.Draw(mask).ellipse((0,0,sz,sz),fill=255)
+            bg.putalpha(mask); final=Image.new("RGB",(sz,sz),(255,255,255)); final.paste(bg,mask=bg.split()[3]); return final
+          sizes={"mipmap-mdpi":48,"mipmap-hdpi":72,"mipmap-xhdpi":96,"mipmap-xxhdpi":144,"mipmap-xxxhdpi":192}
+          base="manager/app/src/main/res"
+          for nm,sz in sizes.items():
+            p=os.path.join(base,nm); os.makedirs(p,exist_ok=True)
+            make(sz).save(os.path.join(p,"ic_launcher.png")); make(sz).save(os.path.join(p,"ic_launcher_round.png"))
+          make(512).save("n.png")
+          print("DONE")
+          PY
+      - run: |
+          git config user.name "ayanda"
+          git config user.email "a@a.com"
+          git add manager/app/src/main/res/ n.png || true
+          git rm -f IMG-*.jpg || true
+          git commit -m "Add Red N icon" || true
+          git push
